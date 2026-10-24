@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Preview</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/preview.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Live Preview <span id="mapName" class="muted"></span></div>
+  <div class="actions">
+    <label class="btn" title="The ledmap.json saved by the LED Mapper">Open ledmap.json<input type="file" id="mapFile" accept=".json,application/json" hidden></label>
+    <button class="btn" id="sampleBtn" title="The synthetic sample map (made-up positions)">Sample map</button>
+    <span class="sep"></span>
+    <div class="seg" id="sourceSeg" role="tablist">
+      <button class="btn" data-src="live" title="CapMetro's live feed">Live</button>
+      <button class="btn" data-src="demo" title="Made-up buses driving along the map">Demo</button>
+      <button class="btn" data-src="replay" title="Saved feed files (.pb or .json)">Replay files</button>
+    </div>
+    <button class="btn" id="pauseBtn">Pause</button>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+
+<main class="layout">
+  <aside class="side">
+    <section id="liveSection">
+      <h2>Feed</h2>
+      <label class="hint" for="feedUrl">VehiclePositions URL (protobuf or JSON)</label>
+      <input id="feedUrl" class="txt" type="text" spellcheck="false">
+      <div class="row">
+        <label class="inline">Every <input id="pollS" class="num" type="number" min="30" max="60" step="1"> s</label>
+        <button class="btn" id="fetchBtn">Fetch now</button>
+        <button class="btn" id="saveFeedBtn" title="Download the last feed exactly as received">Save feed</button>
+      </div>
+    </section>
+    <section id="replaySection" hidden>
+      <h2>Replay</h2>
+      <label class="btn wide">Choose feed files…<input type="file" id="replayFiles" accept=".pb,.bin,.json,application/octet-stream,application/json" multiple hidden></label>
+      <div class="row">
+        <button class="btn" id="replayPrev">◀</button>
+        <div id="replayPos" class="replay-pos">No files</div>
+        <button class="btn" id="replayNext">▶</button>
+      </div>
+      <label class="check"><input type="checkbox" id="replayAuto" checked> Step every 2 s</label>
+    </section>
+
+    <section>
+      <div id="feedStatus" class="status"></div>
+    </section>
+
+    <section>
+      <h2>Routes</h2>
+      <ul id="routeList" class="routes"></ul>
+    </section>
+
+    <section>
+      <h2>Vehicles <span class="muted" id="vehCount"></span></h2>
+      <div class="filter">
+        <label class="check"><input type="checkbox" id="showAll"> Include stale, off-route and hidden</label>
+      </div>
+      <ul id="vehList" class="vehs"></ul>
+    </section>
+
+    <section id="otherSection" hidden>
+      <h2>Not on the board</h2>
+      <p class="hint">Route IDs in the feed that match no route in the map. If a board route shows up here under a different spelling, the map's route_id needs to match it.</p>
+      <div id="otherList" class="other"></div>
+    </section>
+
+    <section>
+      <h2>Display</h2>
+      <label class="check"><input type="checkbox" id="optHyst" checked> Hysteresis (hold LED unless 0.6 of a segment away)</label>
+      <label class="check"><input type="checkbox" id="optOff" checked> Show off-route buses on the map</label>
+    </section>
+  </aside>
+
+  <section class="board-pane">
+    <div class="pane-title">Board <span class="muted">scroll to zoom, drag to pan, click an LED to see who is on it</span></div>
+    <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="ledInfo" class="led-info" hidden></div>
+  </section>
+
+  <section class="map-pane">
+    <div id="map"></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="data/ledmap_sample.js"></script>
+<script src="data/board.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/model.js"></script>
+<script src="js/feed.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/demo.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

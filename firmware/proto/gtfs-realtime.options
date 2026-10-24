@@ -1,0 +1,19 @@
+# nanopb options for gtfs-realtime.proto (FIRMWARE_DESIGN.md §3.2).
+# Strings without a max_size become callbacks, so nothing is malloc'd and a
+# long id can never overflow a buffer. The firmware only reads VehiclePositions,
+# so everything else is dropped from the structs (nanopb still skips it on the
+# wire).
+transit_realtime.FeedHeader.gtfs_realtime_version   type:FT_IGNORE
+transit_realtime.FeedHeader.feed_version            type:FT_IGNORE
+transit_realtime.FeedEntity.trip_update             type:FT_IGNORE
+transit_realtime.FeedEntity.alert                   type:FT_IGNORE
+transit_realtime.FeedEntity.shape                   type:FT_IGNORE
+transit_realtime.FeedEntity.stop                    type:FT_IGNORE
+transit_realtime.FeedEntity.trip_modifications      type:FT_IGNORE
+transit_realtime.VehiclePosition.multi_carriage_details type:FT_IGNORE
+transit_realtime.VehiclePosition.stop_id            type:FT_IGNORE
+transit_realtime.TripDescriptor.modified_trip       type:FT_IGNORE
+transit_realtime.TripDescriptor.trip_id             type:FT_IGNORE
+transit_realtime.TripDescriptor.start_time          type:FT_IGNORE
+transit_realtime.TripDescriptor.start_date          type:FT_IGNORE
+transit_realtime.VehicleDescriptor.license_plate    type:FT_IGNORE

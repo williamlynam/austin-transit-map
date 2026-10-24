@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED Mapper</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">LED Mapper <span id="boardName" class="muted"></span></div>
+  <div class="actions">
+    <label class="btn" title="CapMetro static GTFS zip (google_transit.zip)">Load GTFS zip<input type="file" id="gtfsFile" accept=".zip" hidden></label>
+    <label class="btn" title="Continue from a saved ledmap.json">Open ledmap.json<input type="file" id="mapFile" accept=".json,application/json" hidden></label>
+    <button class="btn primary" id="saveBtn">Save ledmap.json</button>
+    <button class="btn" id="testBtn" title="Click the map to see which LED a vehicle there would light">Test mode</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="side">
+    <section>
+      <h2>Routes</h2>
+      <ul id="routeList" class="routes"></ul>
+    </section>
+
+    <section id="dirSection" hidden>
+      <h2>Directions</h2>
+      <p class="hint">Match each GTFS direction to the board's path.</p>
+      <div id="dirRows"></div>
+    </section>
+
+    <section class="current">
+      <h2>Current LED</h2>
+      <div id="curRef" class="cur-ref">–</div>
+      <div id="curInfo" class="cur-info"></div>
+      <div class="row">
+        <button class="btn" id="prevBtn" title="Previous LED (←)">◀ Prev</button>
+        <button class="btn" id="nextBtn" title="Next LED (→)">Next ▶</button>
+      </div>
+      <div class="row">
+        <button class="btn" id="clearBtn" title="Remove this LED's position (Del)">Clear</button>
+        <button class="btn" id="nextUnplacedBtn" title="Jump to the next LED without a position (N)">Next unplaced</button>
+      </div>
+      <label class="check"><input type="checkbox" id="skipChk"> Skip this LED when snapping</label>
+      <label class="check"><input type="checkbox" id="snapChk" checked> Snap clicks to stations and the route line</label>
+      <p class="hint">Click the map to place the LED; the next LED is selected automatically. Shift-click places exactly where you click. Drag a placed marker to adjust it.</p>
+      <div class="row"><button class="btn" id="undoBtn" title="Undo the last change (Ctrl+Z)">Undo</button></div>
+    </section>
+
+    <section class="fill">
+      <h2>Space evenly</h2>
+      <p class="hint">Place every LED between two placed LEDs at equal distances along the route line.</p>
+      <div class="fill-row">
+        <label>From <select id="fillFrom"></select></label>
+        <label>To <select id="fillTo"></select></label>
+      </div>
+      <div id="fillInfo" class="hint"></div>
+      <div class="row"><button class="btn primary" id="fillBtn">Space evenly</button></div>
+    </section>
+
+    <section>
+      <h2>Sequence</h2>
+      <ol id="seqList" class="seq"></ol>
+    </section>
+
+    <section id="testSection" hidden>
+      <h2>Test mode</h2>
+      <label>Direction
+        <select id="testDir"></select>
+      </label>
+      <div id="testOut" class="hint">Click the map to drop a test vehicle on the selected route.</div>
+    </section>
+
+    <section>
+      <h2>Map tiles</h2>
+      <label class="hint" for="cartoKey">CARTO API key (saved in this browser only)</label>
+      <input id="cartoKey" class="tile-in" type="password" placeholder="Paste your CARTO key" spellcheck="false" autocomplete="off">
+      <div class="row"><button class="btn" id="cartoApply">Use CARTO</button></div>
+      <p class="hint">Or any other tile URL with {z}/{x}/{y}. Leave both empty to use Esri.</p>
+      <input id="tileUrl" class="tile-in" type="text" placeholder="https://…/{z}/{x}/{y}.png?key=…" spellcheck="false">
+      <div class="row"><button class="btn" id="tileApply">Use these tiles</button></div>
+    </section>
+
+    <section>
+      <div id="status" class="hint"></div>
+    </section>
+  </aside>
+
+  <section class="board-pane">
+    <div class="pane-title">Board <span class="muted">scroll to zoom, drag to pan, click an LED to select it</span></div>
+    <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+  </section>
+
+  <section class="map-pane">
+    <div id="map"></div>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="data/ledmap_seed.js"></script>
+<script src="data/board.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/model.js"></script>
+<script src="js/gtfs.js"></script>
+<script src="js/store.js"></script>
+<script src="js/board-view.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

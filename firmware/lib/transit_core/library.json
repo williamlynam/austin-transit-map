@@ -1,0 +1,7 @@
+{
+  "name": "transit_core",
+  "version": "1.0.0",
+  "description": "Hardware-free core of the transit map: LED map, matching, GTFS-rt decoding, simulation, colours. Also compiled on a PC by test/host.",
+  "build": { "srcDir": "src", "includeDir": "src" },
+  "dependencies": [{ "name": "nanopb" }]
+}

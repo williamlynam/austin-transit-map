@@ -1,0 +1,7 @@
+{
+  "name": "nanopb",
+  "version": "0.4.9-2",
+  "description": "nanopb runtime (vendored from nanopb-0.4.9.2) plus gtfs-realtime.pb.c/h generated from proto/ by tools/gen_proto.sh",
+  "build": { "srcDir": ".", "includeDir": "." },
+  "export": { "include": "." }
+}
