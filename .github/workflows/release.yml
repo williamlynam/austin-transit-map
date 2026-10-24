@@ -1,12 +1,16 @@
-# Builds the firmware and publishes a GitHub release when a version tag is
-# pushed (git tag v0.1.16 && git push origin v0.1.16). The board's
-# "Check now" / daily check reads the newest release and installs its
-# transitmap-X-ota.bin. Tags with a "-" (v0.2.0-rc1) become pre-releases.
+# Builds the firmware and publishes a GitHub release whenever
+# firmware/src/version.h changes on main and that version has no release yet
+# (it also runs from the Actions tab). The release creates the tag
+# v<version>. The board's "Check now" / daily check reads the newest release
+# and installs its transitmap-X-ota.bin. A version with a "-" (0.2.0-rc1)
+# becomes a pre-release.
 name: Release firmware
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: [firmware/src/version.h]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -20,18 +24,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check the tag matches src/version.h
+      - name: Read the version
+        id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          ver=$(sed -n 's/.*FIRMWARE_VERSION "\(.*\)".*/\1/p' src/version.h)
-          echo "tag $tag, version.h $ver"
-          test "$tag" = "$ver"
+          v=$(sed -n 's/.*FIRMWARE_VERSION "\(.*\)".*/\1/p' src/version.h)
+          echo "version $v"
+          echo "v=$v" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "v$v is already released; nothing to do"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-python@v5
+        if: steps.ver.outputs.skip != '1'
         with:
           python-version: "3.12"
 
       - uses: actions/cache@v4
+        if: steps.ver.outputs.skip != '1'
         with:
           path: |
             ~/.platformio
@@ -39,19 +51,23 @@ jobs:
           key: pio-${{ hashFiles('firmware/platformio.ini') }}
 
       - name: Install PlatformIO
+        if: steps.ver.outputs.skip != '1'
         run: pip install platformio
 
       - name: PC tests
+        if: steps.ver.outputs.skip != '1'
         run: python test/host/run_tests.py
 
       - name: Build firmware and map image
+        if: steps.ver.outputs.skip != '1'
         run: |
           pio run -e transitmap
           pio run -e transitmap -t buildfs
 
       - name: Collect files
+        if: steps.ver.outputs.skip != '1'
         run: |
-          v="${GITHUB_REF_NAME#v}"
+          v="${{ steps.ver.outputs.v }}"
           b=.pio/build/transitmap
           mkdir -p ../dist
           cp $b/firmware.bin ../dist/transitmap-$v-ota.bin
@@ -60,10 +76,12 @@ jobs:
           ls -l ../dist
 
       - name: Publish release
+        if: steps.ver.outputs.skip != '1'
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          v="${{ steps.ver.outputs.v }}"
           pre=""
-          case "$GITHUB_REF_NAME" in *-*) pre="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Firmware ${GITHUB_REF_NAME#v}" --generate-notes $pre
+          case "$v" in *-*) pre="--prerelease" ;; esac
+          gh release create "v$v" dist/* --target "$GITHUB_SHA" --title "Firmware $v" --generate-notes $pre

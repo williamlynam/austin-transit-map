@@ -61,10 +61,10 @@ its `transitmap-X-ota.bin`, checks it and restarts. The board also checks once a
 day and shows *Update available* on the home page, but it never installs on its
 own. Pre-releases are only offered with *Include pre-releases* on.
 
-Releases are made by `.github/workflows/release.yml`: bump `src/version.h`,
-commit, then `git tag v0.1.16 && git push origin v0.1.16`. GitHub builds the
-firmware and posts the OTA, factory and map files. A tag with a `-`
-(`v0.2.0-rc1`) becomes a pre-release.
+Releases are made by `.github/workflows/release.yml`: push a change to
+`src/version.h` to `main` and GitHub builds the firmware and posts release
+`v<version>` with the OTA, factory and map files (or run it from the Actions
+tab). A version with a `-` (`0.2.0-rc1`) becomes a pre-release.
 
 ## How it behaves
 
