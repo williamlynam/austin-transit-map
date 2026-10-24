@@ -8,6 +8,7 @@
 #include <memory>
 #include <new>
 
+#include "gh_update.h"
 #include "gtfs.h"
 #include "settings.h"
 #include "sim.h"
@@ -319,6 +320,9 @@ void netTask(void *) {
   DisplayMode lastMode = DisplayMode::ChainTest;
   for (;;) {
     Settings s = settings::get();
+    // A GitHub check or install runs here, between polls, so it never needs
+    // TLS memory at the same time as the feed.
+    ghupdate::service(s, wifilink::connected());
     if (s.mode != lastMode) {
       if (s.mode == DisplayMode::Simulated) simRestart = true;
       else {

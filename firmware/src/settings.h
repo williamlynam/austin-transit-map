@@ -15,6 +15,7 @@
 #define TRANSIT_DEFAULT_MODE 0
 #endif
 
+constexpr const char *DEFAULT_GH_REPO = "williamlynam/austin-transit-map";
 constexpr const char *DEFAULT_FEED_URL = "https://data.texas.gov/download/eiei-9rpf/application%2Foctet-stream";
 
 struct ColorOverride {
@@ -41,6 +42,9 @@ struct Settings {
   float simTimeScale = 8.0f;
   uint16_t chainStepMs = 120;                        // chain test: ms per LED step
   std::vector<SimRoute> simRoutes;                   // vehicles per hour and mph per route
+  String ghRepo = DEFAULT_GH_REPO;                   // firmware updates: owner/name of a public repo
+  bool ghPrerelease = false;                         // also offer pre-releases
+  bool ghDailyCheck = true;                          // look for an update once a day (never installs)
   // The first-time setup was finished (on Wi-Fi, or "Set up without Wi-Fi").
   // Phones joining the hotspot then get the settings page, not the setup steps.
   bool setupDone = false;

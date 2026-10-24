@@ -61,6 +61,8 @@ void Settings::clamp() {
     r.mph = constrain(r.mph, 0.0f, 80.0f);
   }
   if (feedUrl.isEmpty()) feedUrl = DEFAULT_FEED_URL;
+  ghRepo.trim();
+  if (ghRepo.isEmpty()) ghRepo = DEFAULT_GH_REPO;
 }
 
 void settings::toJson(const Settings &s, JsonObject o) {
@@ -93,6 +95,10 @@ void settings::toJson(const Settings &s, JsonObject o) {
     x["per_hour"] = r.perHour;
     x["mph"] = r.mph;
   }
+  JsonObject gh = o["github"].to<JsonObject>();
+  gh["repo"] = s.ghRepo;
+  gh["prerelease"] = s.ghPrerelease;
+  gh["daily_check"] = s.ghDailyCheck;
   o["setup_done"] = s.setupDone;
   JsonObject c = o["colors"].to<JsonObject>();
   for (const ColorOverride &co : s.colors) {
@@ -148,6 +154,12 @@ bool settings::fromJson(JsonObjectConst o, Settings &s, String &err) {
       if (kv.value()["per_hour"].is<float>()) r->perHour = kv.value()["per_hour"];
       if (kv.value()["mph"].is<float>()) r->mph = kv.value()["mph"];
     }
+  }
+  JsonObjectConst gh = o["github"];
+  if (!gh.isNull()) {
+    if (gh["repo"].is<const char *>()) s.ghRepo = gh["repo"].as<const char *>();
+    if (gh["prerelease"].is<bool>()) s.ghPrerelease = gh["prerelease"];
+    if (gh["daily_check"].is<bool>()) s.ghDailyCheck = gh["daily_check"];
   }
   if (o["setup_done"].is<bool>()) s.setupDone = o["setup_done"];
   JsonObjectConst c = o["colors"];

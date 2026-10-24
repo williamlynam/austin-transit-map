@@ -17,14 +17,14 @@ The design is in `../firmware-design/FIRMWARE_DESIGN.md`, as changed by Will in 
 
 ### Without PlatformIO
 
-`prebuilt/` has ready-made images. Flash them with esptool or https://espressif.github.io/esptool-js/:
+`prebuilt/` (in the zip) or the GitHub release has ready-made images. Flash them with esptool or https://espressif.github.io/esptool-js/:
 
 | File | Address |
 |---|---|
-| `transitmap-0.1.15-factory.bin` (bootloader + partitions + app) | `0x0` |
+| `transitmap-0.1.16-factory.bin` (bootloader + partitions + app) | `0x0` |
 | `littlefs-map.bin` (the LED map) | `0x390000` |
 
-`transitmap-0.1.15-ota.bin` is the same firmware for *Firmware update* on the web page.
+`transitmap-0.1.16-ota.bin` is the same firmware for *Firmware update* on the web page.
 
 ## Using it
 
@@ -50,7 +50,21 @@ The design is in `../firmware-design/FIRMWARE_DESIGN.md`, as changed by Will in 
 - Feed URL, poll interval (30–60 s) and timeouts.
 - Wi-Fi.
 - LED map upload and download.
-- Firmware update.
+- Firmware update, from a file or from the newest GitHub release (see below).
+
+### Updates from GitHub
+
+*Firmware → From GitHub → Check now* reads the newest release of the repo set in
+*Advanced → Firmware updates* (default `williamlynam/austin-transit-map`, which
+must be public). If it is newer than the installed version, *Install* downloads
+its `transitmap-X-ota.bin`, checks it and restarts. The board also checks once a
+day and shows *Update available* on the home page, but it never installs on its
+own. Pre-releases are only offered with *Include pre-releases* on.
+
+Releases are made by `.github/workflows/release.yml`: bump `src/version.h`,
+commit, then `git tag v0.1.16 && git push origin v0.1.16`. GitHub builds the
+firmware and posts the OTA, factory and map files. A tag with a `-`
+(`v0.2.0-rc1`) becomes a pre-release.
 
 ## How it behaves
 
@@ -87,6 +101,7 @@ src/                  ESP32 side
   wifi_link.*           Wi-Fi, hotspot, WIFI LED
   web.*, web_page.h     settings page and JSON API
   settings.*            /config.json
+  gh_update.*           firmware updates from the newest GitHub release
   leds.*, buttons.*     LED output (one RMT channel, chains sent in turn), MODE/IO0
 test/host/            PC tests
 ```

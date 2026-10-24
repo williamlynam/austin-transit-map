@@ -9,6 +9,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
+#include "gh_update.h"
 #include "runner.h"
 #include "settings.h"
 #include "version.h"
@@ -135,7 +136,29 @@ void handleStatus() {
   }
   m["placed"] = placed;
   m["total"] = total;
+
+  ghupdate::Info gi = ghupdate::info();
+  JsonObject g = doc["github"].to<JsonObject>();
+  g["state"] = ghupdate::stateName(gi.state);
+  if (!gi.latest.isEmpty()) g["latest"] = gi.latest;
+  g["prerelease"] = gi.prerelease;
+  if (!gi.error.isEmpty()) g["error"] = gi.error;
+  if (gi.checkedAtMs) g["checked_ago_ms"] = millis() - gi.checkedAtMs;
+  if (gi.total) {
+    g["done"] = gi.done;
+    g["total"] = gi.total;
+  }
   sendJson(doc);
+}
+
+void handleGhCheck() {
+  ghupdate::requestCheck();
+  server.send(200, "application/json", "{}");
+}
+
+void handleGhInstall() {
+  ghupdate::requestInstall();
+  server.send(200, "application/json", "{}");
 }
 
 void handleGetSettings() {
@@ -358,6 +381,8 @@ void web::begin(LedMap &map, const String &mapError, void (*onSettings)()) {
   server.on("/api/hotspot", HTTP_POST, handleHotspot);
   server.on("/api/ledmap", HTTP_POST, mapUploadDone, mapUpload);
   server.on("/api/update", HTTP_POST, fwUploadDone, fwUpload);
+  server.on("/api/github/check", HTTP_POST, handleGhCheck);
+  server.on("/api/github/install", HTTP_POST, handleGhInstall);
   server.on("/ledmap.json", HTTP_GET, handleMapDownload);
   server.onNotFound(handleNotFound);
   server.begin();

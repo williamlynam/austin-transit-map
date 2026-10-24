@@ -234,6 +234,14 @@ static const char WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
 <section id="v-fw" class="grp hide" style="gap:22px">
  <button class="link" onclick="go('home')">‹ Transit Map</button><h1>Firmware</h1>
  <div class="card"><div class="row"><span class="grow">Installed</span><span class="val" id="fwVer"></span></div></div>
+ <div class="grp"><h2 class="cap">From GitHub</h2><div class="card">
+  <div class="row kv"><span class="grow">Newest release</span><span class="val" id="ghLatest"></span></div>
+  <div class="row kv"><span class="grow">Check once a day</span><input id="ghDaily" type="checkbox" style="width:22px;height:22px" onchange="saveGh()"></div>
+  <div class="row kv"><span class="grow">Include pre-releases</span><input id="ghPre" type="checkbox" style="width:22px;height:22px" onchange="saveGh()"></div>
+ </div><p class="note" id="ghMsg"></p>
+ <div style="display:flex;gap:8px"><button class="btn2" id="ghCheck" onclick="ghCheck()">Check now</button><button class="btn hide" id="ghInstall" onclick="ghInstall()"></button></div>
+ <p class="note">The daily check only tells you about an update. Nothing installs until you press Install. Your Wi-Fi, colors and LED map are kept.</p></div>
+ <h2 class="cap">From a file</h2>
  <label class="btn2" for="fwFile">Choose update file…</label><input id="fwFile" type="file" accept=".bin" class="hide" onchange="upload('/api/update','fwFile','fwMsg')">
  <p class="note" id="fwMsg">Pick the transitmap-…-ota.bin file. The map restarts when the update finishes. Your Wi-Fi, colors and LED map are kept.</p>
 </section>
@@ -258,6 +266,9 @@ static const char WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
   <div class="field" style="border-bottom:1px solid var(--line)"><label for="url">Feed address</label><input id="url" type="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="font-size:14px"></div>
   <div class="row kv"><span class="grow">Connect timeout</span><input class="num" id="cs" type="number" min="5" max="60" inputmode="numeric"> s</div>
   <div class="row kv"><span class="grow">Read timeout</span><input class="num" id="rs" type="number" min="5" max="60" inputmode="numeric"> s</div>
+ </div></div>
+ <div class="grp"><h2 class="cap">Firmware updates</h2><div class="card">
+  <div class="field"><label for="ghRepo">GitHub repo (owner/name, public)</label><input id="ghRepo" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="font-size:14px"></div>
  </div></div>
  <p id="advMsg" class="note"></p>
  <button class="btn" onclick="saveAdv()">Save</button>
@@ -285,7 +296,7 @@ function ago(ms){if(ms==null)return'never';const s=Math.round(ms/1000);return s<
 function pct(v){const p=v*100/255;return p<10?Math.round(p*10)/10:Math.round(p)}
 async function save(b){S=await post('/api/settings',b);draw();return S}
 
-function draw(){if(!S||!ST)return;const s=ST,f=s.feed,on=s.wifi.connected;
+function draw(){if(!S||!ST)return;const s=ST,f=s.feed,on=s.wifi.connected,gh=s.github||{};
  let dot='',line='';
  if(S.mode==='live'){if(!on){dot='warn';line=s.wifi.saved?'Waiting for Wi-Fi':'No Wi-Fi set up'}
   else if(f.ok){dot='ok';line=f.vehicles+' vehicles · updated '+ago(f.since_change_ms)}
@@ -297,9 +308,26 @@ function draw(){if(!S||!ST)return;const s=ST,f=s.feed,on=s.wifi.connected;
  $('modes').innerHTML=[['live','Live'],['simulated','Simulated']].map(([m,l])=>`<button class="${S.mode===m?'on':''}" onclick="save({mode:'${m}'})">${l}</button>`).join('');
  txt('modeHelp',S.mode==='live'?(on?'Vehicle locations are shown based on live GTFS data.':'Needs Wi-Fi. Connect the map to Wi-Fi first.')
   :S.mode==='simulated'?'Vehicle locations are simulated. Configure in Advanced Settings.':'Chain test is running. Stop it in Advanced.');
- txt('vehVal',f.vehicles+' on map');txt('wifiVal',on?s.wifi.ssid:(s.wifi.saved?'Not connected':'Not set up'));txt('fwVal',s.version);txt('fwVer',s.version);
+ txt('vehVal',f.vehicles+' on map');txt('wifiVal',on?s.wifi.ssid:(s.wifi.saved?'Not connected':'Not set up'));txt('fwVal',gh.state==='available'?'Update available':s.version);txt('fwVer',s.version);
  $('ctBtn').textContent=S.mode==='chain_test'?'Stop chain test':'Run chain test';
- if(view==='wifi'&&!joinOpen)drawWifi();if(view==='adv')drawDetails();if(view==='veh')drawVeh()}
+ if(view==='wifi'&&!joinOpen)drawWifi();if(view==='adv')drawDetails();if(view==='veh')drawVeh();if(view==='fw')drawFw()}
+
+function drawFw(){const g=ST.github||{},busy=g.state==='checking'||g.state==='installing';
+ $('ghDaily').checked=!!S.github.daily_check;$('ghPre').checked=!!S.github.prerelease;
+ txt('ghLatest',g.latest?g.latest+(g.prerelease?' (pre-release)':''):g.state==='checking'?'Checking…':'Not checked yet');
+ const kb=b=>Math.round(b/1024);
+ txt('ghMsg',g.state==='checking'?'Looking at '+S.github.repo+'…'
+  :g.state==='installing'?(g.total&&g.done>=g.total?'Installed. Restarting…':'Downloading '+kb(g.done||0)+' of '+kb(g.total||0)+' KB… The map pauses live vehicles until it restarts.')
+  :g.state==='failed'?'Couldn\'t update: '+g.error
+  :g.state==='up_to_date'?'Up to date. Checked '+ago(g.checked_ago_ms)+'.'
+  :g.state==='available'?g.latest+' is ready to install. Checked '+ago(g.checked_ago_ms)+'.':'');
+ $('ghCheck').disabled=busy;const ib=$('ghInstall');ib.classList.toggle('hide',g.state!=='available');ib.disabled=busy;ib.textContent='Install '+(g.latest||'')}
+async function ghCheck(){try{await post('/api/github/check',{});ST.github={...ST.github,state:'checking'};drawFw();setTimeout(refresh,2000)}catch(e){txt('ghMsg',e.message)}}
+async function ghInstall(){try{await post('/api/github/install',{});ST.github={...ST.github,state:'installing',done:0};drawFw();ghWatch()}catch(e){txt('ghMsg',e.message)}}
+// While installing, poll faster; once the board restarts, reload the page.
+function ghWatch(){let lost=0;const t=setInterval(async()=>{try{ST=await j('/api/status');lost=0;draw();if(ST.github.state!=='installing'&&ST.github.state!=='checking'){clearInterval(t);if(ST.version===ST.github.latest)location.reload()}}
+ catch(e){if(++lost>=2){clearInterval(t);txt('ghMsg','Restarting… This page reloads when the map is back.');setTimeout(()=>location.reload(),12000)}}},2000)}
+async function saveGh(){try{await save({github:{daily_check:$('ghDaily').checked,prerelease:$('ghPre').checked}})}catch(e){txt('ghMsg',e.message)}}
 
 function drawVeh(){const s=ST,f=s.feed;
  txt('vehFeed',S.mode==='simulated'?'Simulated vehicles.':S.mode==='live'?(f.ok?'Live feed, updated '+ago(f.since_change_ms)+'. '+f.vehicles+' vehicles on the board\'s routes.':'Live feed: '+(f.error||'waiting for the first update')):'Chain test is running.');
@@ -341,7 +369,7 @@ function drawAdv(){if(!S||!ST)return;for(let k=0;k<3;k++)$('b'+k).value=pct(S.br
  $('nOn').checked=S.night.enabled;$('nS').value=S.night.start;$('nE').value=S.night.end;$('nP').value=S.night.percent;$('ma').value=S.max_ma;$('lvp').value=S.line_vehicle_pct;
  $('simRows').innerHTML=ST.routes.map(r=>{const v=simOf(r.id);return `<div class="row kv"><span class="grow"><b>${esc(r.id)}</b> <span style="color:var(--mut2)">${esc(r.name)}</span></span><input class="num" style="width:52px" id="sh_${esc(r.id)}" type="number" min="0" max="30" step="0.5" inputmode="decimal" value="${v.per_hour}" aria-label="Vehicles per hour, route ${esc(r.id)}">/h <input class="num" style="width:52px" id="sm_${esc(r.id)}" type="number" min="0" max="80" inputmode="numeric" value="${v.mph}" aria-label="Speed, route ${esc(r.id)}">mph</div>`}).join('')
   +`<div class="row kv"><span class="grow">Speed-up</span><input class="num" id="ts" type="number" min="1" max="60" step="1" inputmode="numeric" value="${S.sim.time_scale}">× real time</div>`;
- $('ctMs').value=S.chain_ms;$('poll').value=S.feed.poll_s;$('url').value=S.feed.url;$('cs').value=S.feed.connect_s;$('rs').value=S.feed.read_s;
+ $('ghRepo').value=S.github.repo;$('ctMs').value=S.chain_ms;$('poll').value=S.feed.poll_s;$('url').value=S.feed.url;$('cs').value=S.feed.connect_s;$('rs').value=S.feed.read_s;
  $('advMsg').textContent='';drawDetails()}
 function drawDetails(){const s=ST,f=s.feed;
  txt('mapInfo',s.map.error?'Not loaded: '+s.map.error:s.map.routes+' routes, '+s.map.placed+' of '+s.map.total+' LEDs');
@@ -351,7 +379,7 @@ async function saveAdv(){const sim={};for(const r of ST.routes)sim[r.id]={per_ho
  try{await save({brightness:[0,1,2].map(k=>Math.max(2,Math.round(+$('b'+k).value*255/100))),
   night:{enabled:$('nOn').checked,start:$('nS').value,end:$('nE').value,percent:+$('nP').value},max_ma:+$('ma').value,line_vehicle_pct:+$('lvp').value,
   sim:{time_scale:+$('ts').value,routes:sim},
-  feed:{poll_s:+$('poll').value,url:$('url').value,connect_s:+$('cs').value,read_s:+$('rs').value}});
+  feed:{poll_s:+$('poll').value,url:$('url').value,connect_s:+$('cs').value,read_s:+$('rs').value},github:{repo:$('ghRepo').value.trim()}});
   if(document.activeElement)document.activeElement.blur();drawAdv();$('advMsg').innerHTML='<span class="okt">Saved.</span>'}catch(e){$('advMsg').innerHTML='<span class="err" style="padding:0">'+esc(e.message)+'</span>'}}
 async function saveChainMs(){const v=Math.min(2000,Math.max(20,Math.round(+$('ctMs').value||120)));$('ctMs').value=v;try{await save({chain_ms:v})}catch(e){}}
 async function toggleChain(){if(S.mode==='chain_test')await save({mode:lastMode==='chain_test'?'live':lastMode});else{lastMode=S.mode;await save({mode:'chain_test'})}}
