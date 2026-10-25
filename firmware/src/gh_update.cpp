@@ -64,6 +64,27 @@ void setupHttp(HTTPClient &http, NetworkClientSecure &client) {
   http.setUserAgent("AustinTransitMap/" FIRMWARE_VERSION " (ESP32)");  // GitHub's API refuses requests without one
 }
 
+// Reads up to len bytes of a body, waiting for slow TLS records the way the
+// feed reader does. Returns how many arrived.
+uint32_t readBody(NetworkClient *body, uint8_t *buf, uint32_t len) {
+  uint32_t got = 0, last = millis();
+  while (got < len) {
+    int avail = body->available();
+    if (avail > 0) {
+      int r = body->read(buf + got, min<size_t>(len - got, size_t(avail)));
+      if (r > 0) {
+        got += uint32_t(r);
+        last = millis();
+        continue;
+      }
+    }
+    if (!body->connected() && body->available() <= 0) break;
+    if (millis() - last > READ_TIMEOUT_MS) break;
+    vTaskDelay(1);
+  }
+  return got;
+}
+
 bool enoughMemory() {
   if (ESP.getMaxAllocHeap() >= TLS_MIN_BLOCK) return true;
   setState(ghupdate::State::Failed, "not enough memory for a secure connection (largest block " +
@@ -95,6 +116,8 @@ bool check(const Settings &s) {
     setState(ghupdate::State::Failed, "bad GitHub repo name");
     return false;
   }
+  // HTTP/1.1 here: getString() below handles both a sized and a chunked answer.
+  http.useHTTP10(false);
   http.addHeader("Accept", "application/vnd.github+json");
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
@@ -107,6 +130,22 @@ bool check(const Settings &s) {
     return false;
   }
 
+  // The whole answer (about 7 KB) is read first and then parsed. Parsing
+  // straight from the TLS stream stopped early on the board (IncompleteInput).
+  const int MAX_BODY = 32768;
+  int len = http.getSize();
+  if (len > MAX_BODY) {
+    http.end();
+    setState(ghupdate::State::Failed, "GitHub's answer is too large (" + String(len / 1024) + " KB)");
+    return false;
+  }
+  String body = http.getString();
+  http.end();
+  if (body.isEmpty() || (len > 0 && int(body.length()) < len)) {
+    setState(ghupdate::State::Failed, "GitHub's answer stopped after " + String(body.length()) + (len > 0 ? " of " + String(len) : String()) + " bytes");
+    return false;
+  }
+
   // Only the fields we use, so the release notes never fill memory.
   JsonDocument filter, doc;
   JsonObject f = s.ghPrerelease ? filter.add<JsonObject>() : filter.to<JsonObject>();
@@ -116,8 +155,8 @@ bool check(const Settings &s) {
   fa["name"] = true;
   fa["size"] = true;
   fa["browser_download_url"] = true;
-  DeserializationError je = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-  http.end();
+  DeserializationError je = deserializeJson(doc, body, DeserializationOption::Filter(filter));
+  body = String();
   if (je) {
     setState(ghupdate::State::Failed, String("couldn't read GitHub's answer: ") + je.c_str());
     return false;
@@ -206,23 +245,13 @@ void install() {
     st.total = uint32_t(len);
   }
   NetworkClient *body = http.getStreamPtr();
-  uint32_t got = 0, last = millis();
+  uint32_t got = 0;
   while (got < uint32_t(len)) {
-    int avail = body->available();
-    if (avail > 0) {
-      int r = body->read(buf.get(), min<size_t>(2048, size_t(avail)));
-      if (r > 0) {
-        if (Update.write(buf.get(), size_t(r)) != size_t(r)) break;
-        got += uint32_t(r);
-        last = millis();
-        std::lock_guard<std::mutex> g(mu);
-        st.done = got;
-        continue;
-      }
-    }
-    if (!body->connected() && body->available() <= 0) break;
-    if (millis() - last > READ_TIMEOUT_MS) break;
-    vTaskDelay(1);
+    uint32_t n = readBody(body, buf.get(), min<uint32_t>(2048, uint32_t(len) - got));
+    if (!n || Update.write(buf.get(), n) != n) break;
+    got += n;
+    std::lock_guard<std::mutex> g(mu);
+    st.done = got;
   }
   http.end();
   if (got < uint32_t(len)) {

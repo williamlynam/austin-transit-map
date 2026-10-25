@@ -21,10 +21,10 @@ The design is in `../firmware-design/FIRMWARE_DESIGN.md`, as changed by Will in 
 
 | File | Address |
 |---|---|
-| `transitmap-0.1.16-factory.bin` (bootloader + partitions + app) | `0x0` |
+| `transitmap-0.1.17-factory.bin` (bootloader + partitions + app) | `0x0` |
 | `littlefs-map.bin` (the LED map) | `0x390000` |
 
-`transitmap-0.1.16-ota.bin` is the same firmware for *Firmware update* on the web page.
+`transitmap-0.1.17-ota.bin` is the same firmware for *Firmware update* on the web page.
 
 ## Using it
 
