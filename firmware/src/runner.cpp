@@ -27,7 +27,9 @@ const uint32_t TLS_MIN_BLOCK = 20000;
 const uint32_t TLS_MIN_FREE = 50000;
 const int LOW_MEM_RESTART = 10;
 const uint32_t SIM_INTERVAL_MS = 2000;
-const uint32_t BACKOFF_S[] = {30, 60, 120};
+// After failed polls (the first already retried once): the poll interval,
+// then a minute. Kept short so a short outage doesn't blank the map for long.
+const uint32_t BACKOFF_S[] = {30, 30, 60};
 
 LedMap *gmap = nullptr;
 Engine *engine = nullptr;
@@ -213,24 +215,52 @@ bool fetchLive(const Settings &s) {
     return false;
   }
   uint32_t t0 = millis();
-  std::unique_ptr<NetworkClientSecure> client(new NetworkClientSecure);
-  client->useBuiltinCACertBundle();
-  client->setHandshakeTimeout(s.connectS);
-  HTTPClient http;
-  http.useHTTP10(true);  // no chunked encoding, so the body can be streamed as-is
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);  // Socrata redirects to blob storage
-  http.setConnectTimeout(int32_t(s.connectS) * 1000);
-  http.setTimeout(uint16_t(min<uint32_t>(s.readS * 1000UL, 65000UL)));
-  http.setUserAgent("AustinTransitMap/1.0 (ESP32)");
-  if (!http.begin(*client, s.feedUrl)) {
-    setError("bad feed URL", 0);
-    return false;
+  // A connection that fails before any answer (refused, or no answer within
+  // the connect timeout) is tried once more a few seconds later, so one bad
+  // connection to Socrata's servers doesn't cost a whole poll.
+  std::unique_ptr<NetworkClientSecure> client;
+  std::unique_ptr<HTTPClient> httpp;
+  int code = 0;
+  for (int attempt = 0; attempt < 2; attempt++) {
+    if (attempt) {
+      vTaskDelay(pdMS_TO_TICKS(3000));
+      if (ESP.getMaxAllocHeap() < TLS_MIN_BLOCK) break;
+    }
+    client.reset(new NetworkClientSecure);
+    client->useBuiltinCACertBundle();
+    client->setHandshakeTimeout(s.connectS);
+    httpp.reset(new HTTPClient);
+    HTTPClient &http = *httpp;
+    http.useHTTP10(true);  // no chunked encoding, so the body can be streamed as-is
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);  // Socrata redirects to blob storage
+    http.setConnectTimeout(int32_t(s.connectS) * 1000);
+    http.setTimeout(uint16_t(min<uint32_t>(s.readS * 1000UL, 65000UL)));
+    http.setUserAgent("AustinTransitMap/1.0 (ESP32)");
+    if (!http.begin(*client, s.feedUrl)) {
+      setError("bad feed URL", 0);
+      return false;
+    }
+    uint32_t ta = millis();
+    code = http.GET();
+    if (code >= 0) break;
+    // Say which connection failed (the feed address or the storage it
+    // redirects to), how, and after how long.
+    String where = http.getLocation().isEmpty() ? hostOf(s.feedUrl) : hostOf(http.getLocation());
+    uint32_t took = millis() - ta;
+    String how = took + 1000 >= uint32_t(s.connectS) * 1000 ? "no answer from " + where + " in " + String(took / 1000) + " s"
+                                                            : where + " closed the connection after " + String(took / 1000.0f, 1) + " s";
+    String e = String("connection failed: ") + http.errorToString(code) + " (" + how + (attempt ? ", twice" : "") + ")" +
+               failureDetail(*client, s.feedUrl);
+    Serial.printf("feed: attempt %d: %s\n", attempt + 1, e.c_str());
+    http.end();
+    if (attempt) {
+      setError(e, code);
+      return false;
+    }
   }
-  int code = http.GET();
+  HTTPClient &http = *httpp;
   if (code != HTTP_CODE_OK) {
-    String e = code < 0 ? String("connection failed: ") + http.errorToString(code) : String("HTTP ") + code;
-    if (code < 0) e += failureDetail(*client, s.feedUrl);
-    setError(e, code);
+    setError(code < 0 ? String("connection failed: ") + http.errorToString(code) : String("HTTP ") + code, code);
     http.end();
     return false;
   }
