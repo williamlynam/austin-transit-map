@@ -51,6 +51,7 @@ The design is in `../firmware-design/FIRMWARE_DESIGN.md`, as changed by Will in 
 - Wi-Fi.
 - LED map upload and download.
 - Firmware update, from a file or from the newest GitHub release (see below).
+- Feed log (home page): good and failed feed checks per hour for the last 24 hours, and the last 20 problems (failed checks, checks that only worked on the retry, Wi-Fi lost/back) with their times. Kept in RAM, so a restart clears it.
 
 ### Updates from GitHub
 

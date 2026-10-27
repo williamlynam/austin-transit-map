@@ -105,6 +105,13 @@ void handleStatus() {
   JsonArray oi = f["other_route_ids"].to<JsonArray>();
   for (int k = 0; k < s.otherIdCount; k++) oi.add(s.otherIds[k]);
   f["next_poll_ms"] = s.nextPollInMs;
+  {
+    JsonDocument lg;
+    runner::feedLog(lg.to<JsonObject>());
+    int failed = 0;
+    for (JsonObject h : lg["hours"].as<JsonArray>()) failed += h["failed"].as<int>();
+    f["failed_24h"] = failed;
+  }
 
   JsonObject m = doc["map"].to<JsonObject>();
   m["error"] = mapErr;
@@ -148,6 +155,12 @@ void handleStatus() {
     g["done"] = gi.done;
     g["total"] = gi.total;
   }
+  sendJson(doc);
+}
+
+void handleFeedLog() {
+  JsonDocument doc;
+  runner::feedLog(doc.to<JsonObject>());
   sendJson(doc);
 }
 
@@ -381,6 +394,7 @@ void web::begin(LedMap &map, const String &mapError, void (*onSettings)()) {
   server.on("/api/hotspot", HTTP_POST, handleHotspot);
   server.on("/api/ledmap", HTTP_POST, mapUploadDone, mapUpload);
   server.on("/api/update", HTTP_POST, fwUploadDone, fwUpload);
+  server.on("/api/feedlog", HTTP_GET, handleFeedLog);
   server.on("/api/github/check", HTTP_POST, handleGhCheck);
   server.on("/api/github/install", HTTP_POST, handleGhInstall);
   server.on("/ledmap.json", HTTP_GET, handleMapDownload);

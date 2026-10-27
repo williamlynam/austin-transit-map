@@ -184,6 +184,7 @@ static const char WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
   <button class="link" style="font-size:15px;padding:0 12px" onclick="resetColors()">Reset to CapMetro colors</button></div>
  <div class="card">
   <button class="row" onclick="go('veh')"><span class="grow">Vehicles by route</span><span class="val" id="vehVal"></span><span class="chev">›</span></button>
+  <button class="row" onclick="go('log')"><span class="grow">Feed log</span><span class="val" id="logVal"></span><span class="chev">›</span></button>
   <button class="row" onclick="go('wifi')"><span class="grow">Wi-Fi</span><span class="val" id="wifiVal"></span><span class="chev">›</span></button>
   <button class="row" onclick="go('fw')"><span class="grow">Firmware</span><span class="val" id="fwVal"></span><span class="chev">›</span></button>
   <button class="row" onclick="go('adv')"><span class="grow">Advanced</span><span class="chev">›</span></button>
@@ -229,6 +230,17 @@ static const char WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
   <tbody id="vehRows"></tbody></table></div>
  <div class="grp"><h2 class="cap">Not on the map</h2><div class="card" style="padding:14px 16px;gap:6px;font-size:15px" id="vehOther"></div></div>
  <p class="note">On map: lit on an LED. Hidden: on the 837 loop with no direction, so it isn't guessed. Off route: farther from the drawn route than the map's snap distance (400 m unless the map file sets it). Stale: no update for 2 minutes. No GPS: in the feed without a position. A route with all zeros usually means the feed uses a different route ID than the LED map; check the list above.</p>
+</section>
+
+<section id="v-log" class="grp hide" style="gap:22px">
+ <button class="link" onclick="go('home')">‹ Transit Map</button><h1>Feed log</h1>
+ <div class="grp"><h2 class="cap">Last 24 hours</h2><div class="card" style="padding:14px 16px;gap:8px">
+  <div id="logBars" style="display:flex;align-items:flex-end;gap:2px;height:64px"></div>
+  <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mut2)"><span>24 h ago</span><span>now</span></div>
+  <div id="logSum" style="font-size:15px"></div></div>
+  <p class="note">Each bar is one hour. Red shows failed checks (the taller, the more). Tap a bar for its numbers. Kept since the map last started.</p></div>
+ <div class="grp"><h2 class="cap">Problems</h2><div class="card" id="logRows"></div></div>
+ <button class="btn2" onclick="loadLog()">Refresh</button>
 </section>
 
 <section id="v-fw" class="grp hide" style="gap:22px">
@@ -291,8 +303,19 @@ static const char WEB_PAGE[] PROGMEM = R"HTML(<!doctype html>
 let S=null,ST=null,view='home',lastMode='live',joinOpen=false;
 const MODES={live:'Live',simulated:'Simulated',chain_test:'Chain test'};
 function go(v){view=v;for(const s of document.querySelectorAll('main>section'))s.classList.toggle('hide',s.id!=='v-'+v);window.scrollTo(0,0);
- if(v==='adv')drawAdv();if(v==='wifi'){closeJoin();drawWifi()}draw()}
-function ago(ms){if(ms==null)return'never';const s=Math.round(ms/1000);return s<90?s+' s ago':Math.round(s/60)+' min ago'}
+ if(v==='adv')drawAdv();if(v==='wifi'){closeJoin();drawWifi()}if(v==='log')loadLog();draw()}
+async function loadLog(){let L;try{L=await j('/api/feedlog')}catch(e){$('logRows').innerHTML='<div class="row" style="color:var(--mut2)">Could not load the log.</div>';return}
+ const hs=L.hours.slice().reverse(),mx=Math.max(1,...hs.map(h=>h.failed));
+ // Gray: the hour had checks. Red: failed checks, scaled to the worst hour so even one shows.
+ $('logBars').innerHTML=Array.from({length:24-hs.length},()=>'<div style="flex:1"></div>').join('')+hs.map((h,i)=>{const t=h.ok+h.failed;
+  const ago=hs.length-1-i;return `<div onclick="txt('logSum','${ago?ago+' h ago':'This hour'}: ${h.ok} good, ${h.failed} failed${h.retried?', '+h.retried+' worked on the retry':''}.')" style="cursor:pointer;flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;border-radius:2px;background:${t?'var(--line)':'transparent'}">`+
+   (h.failed?`<div style="height:${Math.max(15,h.failed*100/mx)}%;background:var(--bad);border-radius:2px"></div>`:'')+'</div>'}).join('');
+ const ok=hs.reduce((a,h)=>a+h.ok,0),bad=hs.reduce((a,h)=>a+h.failed,0),re=hs.reduce((a,h)=>a+h.retried,0);
+ txt('logSum',`${ok} good checks, ${bad} failed`+(re?`, ${re} worked on the retry`:'')+'.');
+ const when=e=>e.t?new Date(e.t*1000).toLocaleString([],{weekday:'short',hour:'numeric',minute:'2-digit'}):ago(e.ago_s*1000);
+ $('logRows').innerHTML=L.events.length?L.events.map(e=>`<div class="row" style="flex-direction:column;align-items:flex-start;gap:2px;padding-top:10px;padding-bottom:10px"><span style="font-size:13px;color:var(--mut2)">${esc(when(e))}</span><span style="font-size:14px;word-break:break-word">${esc(e.msg)}</span></div>`).join('')
+  :'<div class="row" style="color:var(--mut2)">No problems since the map started.</div>'}
+function ago(ms){if(ms==null)return'never';const s=Math.round(ms/1000);return s<90?s+' s ago':s<5400?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago'}
 function pct(v){const p=v*100/255;return p<10?Math.round(p*10)/10:Math.round(p)}
 async function save(b){S=await post('/api/settings',b);draw();return S}
 
@@ -308,7 +331,7 @@ function draw(){if(!S||!ST)return;const s=ST,f=s.feed,on=s.wifi.connected,gh=s.g
  $('modes').innerHTML=[['live','Live'],['simulated','Simulated']].map(([m,l])=>`<button class="${S.mode===m?'on':''}" onclick="save({mode:'${m}'})">${l}</button>`).join('');
  txt('modeHelp',S.mode==='live'?(on?'Vehicle locations are shown based on live GTFS data.':'Needs Wi-Fi. Connect the map to Wi-Fi first.')
   :S.mode==='simulated'?'Vehicle locations are simulated. Configure in Advanced Settings.':'Chain test is running. Stop it in Advanced.');
- txt('vehVal',f.vehicles+' on map');txt('wifiVal',on?s.wifi.ssid:(s.wifi.saved?'Not connected':'Not set up'));txt('fwVal',gh.state==='available'?'Update available':s.version);txt('fwVer',s.version);
+ txt('vehVal',f.vehicles+' on map');txt('logVal',f.failed_24h?f.failed_24h+' failed in 24 h':'No failures');txt('wifiVal',on?s.wifi.ssid:(s.wifi.saved?'Not connected':'Not set up'));txt('fwVal',gh.state==='available'?'Update available':s.version);txt('fwVer',s.version);
  $('ctBtn').textContent=S.mode==='chain_test'?'Stop chain test':'Run chain test';
  if(view==='wifi'&&!joinOpen)drawWifi();if(view==='adv')drawDetails();if(view==='veh')drawVeh();if(view==='fw')drawFw()}
 

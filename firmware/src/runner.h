@@ -3,6 +3,7 @@
 // Runs on core 0 so the LEDs (core 1) never wait on the network.
 #pragma once
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 #include "engine.h"
 #include "ledmap.h"
@@ -34,4 +35,6 @@ void begin(LedMap &map);
 bool takeOccupancy(uint32_t &lastSeq, Occupancy &out);
 Status status();
 void restartSimulation();  // mode changed to Simulated, or map reloaded
+// The feed log: polls per hour for the last 24 hours, and recent problems.
+void feedLog(JsonObject out);
 }  // namespace runner

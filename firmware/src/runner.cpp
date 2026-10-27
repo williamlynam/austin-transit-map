@@ -53,6 +53,46 @@ struct SimBuffers {
 };
 SimBuffers *simBufs = nullptr;
 int lowMemPolls = 0;
+String retryNote;  // set when a poll's first connection failed but the retry worked
+
+// Feed log (1.0.1): the last LOG_N problems, and good/failed polls per hour
+// for the last 24 hours, so a failure that clears by itself can still be
+// seen. Kept in RAM (about 2.5 KB), so a restart clears it. Guarded by mutex.
+const int LOG_N = 20, LOG_MSG = 100, HOURS = 24;
+struct LogEntry {
+  uint32_t epoch;  // 0 if the clock wasn't set yet
+  uint32_t upS;    // seconds since start
+  char msg[LOG_MSG];
+};
+LogEntry logRing[LOG_N];
+int logCount = 0, logNext = 0;
+uint32_t hourIdx[HOURS];  // millis() / 1 h that each slot counts
+uint16_t hourOk[HOURS], hourFail[HOURS], hourRetried[HOURS];
+
+void logEvent(const String &m) {
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  LogEntry &e = logRing[logNext];
+  time_t t = time(nullptr);
+  e.epoch = t > 1700000000 ? uint32_t(t) : 0;
+  e.upS = millis() / 1000;
+  strlcpy(e.msg, m.c_str(), sizeof e.msg);
+  logNext = (logNext + 1) % LOG_N;
+  if (logCount < LOG_N) logCount++;
+  xSemaphoreGive(mutex);
+}
+
+void countPoll(bool ok, bool retried) {
+  uint32_t h = millis() / 3600000UL;
+  int k = int(h % HOURS);
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  if (hourIdx[k] != h) {
+    hourIdx[k] = h;
+    hourOk[k] = hourFail[k] = hourRetried[k] = 0;
+  }
+  (ok ? hourOk : hourFail)[k]++;
+  if (retried) hourRetried[k]++;
+  xSemaphoreGive(mutex);
+}
 
 uint64_t epochNow() {
   time_t t = time(nullptr);
@@ -221,10 +261,15 @@ bool fetchLive(const Settings &s) {
   std::unique_ptr<NetworkClientSecure> client;
   std::unique_ptr<HTTPClient> httpp;
   int code = 0;
+  String firstErr;
+  retryNote = "";
   for (int attempt = 0; attempt < 2; attempt++) {
     if (attempt) {
       vTaskDelay(pdMS_TO_TICKS(3000));
-      if (ESP.getMaxAllocHeap() < TLS_MIN_BLOCK) break;
+      if (ESP.getMaxAllocHeap() < TLS_MIN_BLOCK) {
+        setError(firstErr, code);
+        return false;
+      }
     }
     client.reset(new NetworkClientSecure);
     client->useBuiltinCACertBundle();
@@ -242,7 +287,10 @@ bool fetchLive(const Settings &s) {
     }
     uint32_t ta = millis();
     code = http.GET();
-    if (code >= 0) break;
+    if (code >= 0) {
+      if (attempt) retryNote = "first try failed, the retry worked: " + firstErr;
+      break;
+    }
     // Say which connection failed (the feed address or the storage it
     // redirects to), how, and after how long.
     String where = http.getLocation().isEmpty() ? hostOf(s.feedUrl) : hostOf(http.getLocation());
@@ -257,6 +305,7 @@ bool fetchLive(const Settings &s) {
       setError(e, code);
       return false;
     }
+    firstErr = e;
   }
   HTTPClient &http = *httpp;
   if (code != HTTP_CODE_OK) {
@@ -346,6 +395,7 @@ void runSimulated(const Settings &s) {
 void netTask(void *) {
   uint32_t nextPoll = 0;
   int failures = 0;
+  bool wasOnline = false;
   bool showing = false;  // vehicles from the live feed are on the map
   DisplayMode lastMode = DisplayMode::ChainTest;
   for (;;) {
@@ -379,14 +429,24 @@ void netTask(void *) {
     }
 
     uint32_t now = millis();
-    if (wifilink::connected() && int32_t(now - nextPoll) >= 0) {
+    bool online = wifilink::connected();
+    if (online != wasOnline) {
+      logEvent(online ? "Wi-Fi connected" : "Wi-Fi lost");
+      wasOnline = online;
+    }
+    if (online && int32_t(now - nextPoll) >= 0) {
       xSemaphoreTake(mutex, portMAX_DELAY);
       st.lastFetchMs = now;
       xSemaphoreGive(mutex);
       if (fetchLive(s)) {
+        countPoll(true, !retryNote.isEmpty());
+        if (!retryNote.isEmpty()) logEvent(retryNote);
+        if (failures) logEvent("feed OK again after " + String(failures) + (failures == 1 ? " failed check" : " failed checks"));
         failures = 0;
         nextPoll = millis() + s.pollS * 1000UL;
       } else {
+        countPoll(false, false);
+        logEvent(runner::status().lastError);
         // Back off and keep trying; never restart for a network problem.
         uint32_t wait = BACKOFF_S[min(failures, 2)];
         failures++;
@@ -449,3 +509,29 @@ Status runner::status() {
 }
 
 void runner::restartSimulation() { simRestart = true; }
+
+void runner::feedLog(JsonObject out) {
+  uint32_t nowH = millis() / 3600000UL;
+  xSemaphoreTake(mutex, portMAX_DELAY);
+  // Newest hour first; hours with no polls show as zeros.
+  JsonArray hs = out["hours"].to<JsonArray>();
+  for (int a = 0; a < HOURS && uint32_t(a) <= nowH; a++) {
+    uint32_t h = nowH - uint32_t(a);
+    int k = int(h % HOURS);
+    JsonObject o = hs.add<JsonObject>();
+    bool here = hourIdx[k] == h;
+    o["ok"] = here ? hourOk[k] : 0;
+    o["failed"] = here ? hourFail[k] : 0;
+    o["retried"] = here ? hourRetried[k] : 0;
+  }
+  out["hour_ms"] = millis() % 3600000UL;  // how far into the newest hour we are
+  JsonArray es = out["events"].to<JsonArray>();
+  for (int a = 0; a < logCount; a++) {
+    const LogEntry &e = logRing[(logNext - 1 - a + LOG_N) % LOG_N];
+    JsonObject o = es.add<JsonObject>();
+    if (e.epoch) o["t"] = e.epoch;
+    o["ago_s"] = millis() / 1000 - e.upS;
+    o["msg"] = e.msg;
+  }
+  xSemaphoreGive(mutex);
+}
